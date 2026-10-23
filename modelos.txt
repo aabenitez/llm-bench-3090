@@ -1,0 +1,59 @@
+# =============================================================================
+#  Lista de modelos a evaluar (GGUF descargados automáticamente de Hugging Face)
+#  Pensada para: 1 o 2x RTX 3090 (24/48 GB) + 32/64 GB DDR5 + Ryzen 7800X3D / 9950X3D
+# =============================================================================
+#  Formato (separado por "|"):
+#    nombre | repo_hf:cuant | tokenizer_hf | contexto | ram_min_gb | args_extra | gpus_min | args_2gpu
+#
+#  - nombre        : alias corto (sin espacios), se usa en archivos y gráficos.
+#  - repo_hf:cuant : lo que recibe "llama-server -hf" (repo GGUF + cuantización).
+#  - tokenizer_hf  : repo HF con el tokenizer original (lo usa llama-benchy para
+#                    construir prompts de longitud exacta). Usar repos sin acceso
+#                    restringido (por eso unsloth/... en Gemma, Llama y Mistral).
+#  - contexto      : tokens de contexto POR SLOT. Las profundidades (--depth) que
+#                    no entren (depth + pp + tg > contexto) se omiten para ese modelo.
+#  - ram_min_gb    : RAM de sistema mínima. Si tu PC tiene menos, se salta.
+#  - args_extra    : flags extra para llama-server (ej. caché KV cuantizada o
+#                    "--n-cpu-moe N" para descargar expertos MoE a la CPU/RAM).
+#  - gpus_min      : (opcional, defecto 1) 2 = solo se prueba en modos de 2 GPUs.
+#  - args_2gpu     : (opcional) reemplaza args_extra en los modos de 2 GPUs.
+#                    "-" = sin flags extra. Útil para bajar --n-cpu-moe con 48 GB.
+#
+#  Notas:
+#  - En el modo 2gpu-tensor se quitan -ctk/-ctv (no admite caché KV cuantizada)
+#    y muchos MoE no están soportados: esos fallarán ahí y se registran como error.
+#  - Líneas que empiezan con "#" se ignoran. Comentá/descomentá a gusto.
+# =============================================================================
+
+# --- Modelos chicos: referencia de velocidad máxima --------------------------
+qwen3-8b-q4      | unsloth/Qwen3-8B-GGUF:Q4_K_M                     | Qwen/Qwen3-8B                               | 32768 | 16 |
+qwen3-8b-q8      | unsloth/Qwen3-8B-GGUF:Q8_0                       | Qwen/Qwen3-8B                               | 32768 | 16 |
+llama3.1-8b-q4   | unsloth/Llama-3.1-8B-Instruct-GGUF:Q4_K_M        | unsloth/Llama-3.1-8B-Instruct               | 32768 | 16 |
+
+# --- Medianos: 100 % en VRAM ---------------------------------------------------
+qwen3-14b-q4     | unsloth/Qwen3-14B-GGUF:Q4_K_M                    | Qwen/Qwen3-14B                              | 32768 | 16 |
+gpt-oss-20b      | ggml-org/gpt-oss-20b-GGUF                        | openai/gpt-oss-20b                          | 32768 | 16 |
+mistral-24b-q4   | unsloth/Mistral-Small-3.2-24B-Instruct-2506-GGUF:Q4_K_M | unsloth/Mistral-Small-3.2-24B-Instruct-2506 | 32768 | 16 |
+
+# --- Grandes que entran justo en 24 GB (caché KV en q8_0 para hacer lugar) ----
+#     Con 2 GPUs sobra lugar: se usa caché KV normal (args_2gpu = "-")
+gemma3-27b-q4    | unsloth/gemma-3-27b-it-GGUF:Q4_K_M               | unsloth/gemma-3-27b-it                      | 20480 | 16 | -ctk q8_0 -ctv q8_0 | 1 | -
+qwen3-32b-q4     | unsloth/Qwen3-32B-GGUF:Q4_K_M                    | Qwen/Qwen3-32B                              | 20480 | 16 | -ctk q8_0 -ctv q8_0 | 1 | -
+
+# --- MoE (pocos parámetros activos = muy rápidos) -------------------------------
+qwen3-30b-a3b-q4 | unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Q4_K_M  | Qwen/Qwen3-30B-A3B-Instruct-2507            | 32768 | 32 |
+qwen3-coder-30b-q4 | unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M | Qwen/Qwen3-Coder-30B-A3B-Instruct         | 32768 | 32 |
+
+# --- Híbridos GPU + CPU/RAM: aquí se nota la diferencia 7800X3D vs 9950X3D ----
+#  Con 1 GPU parte de los expertos MoE corre en la CPU. Con 2 GPUs (48 GB) caben
+#  más capas en VRAM (args_2gpu). Ajustá --n-cpu-moe si sobra/falta memoria.
+qwen3-30b-a3b-q8 | unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Q8_0    | Qwen/Qwen3-30B-A3B-Instruct-2507            | 32768 | 32 | --n-cpu-moe 20 | 1 | -
+gpt-oss-120b     | ggml-org/gpt-oss-120b-GGUF                       | openai/gpt-oss-120b                         | 32768 | 64 | --n-cpu-moe 26 | 1 | --n-cpu-moe 12
+
+# --- Solo con 2x RTX 3090 (48 GB de VRAM) ---------------------------------------
+#  Densos grandes: es donde más se nota el reparto entre GPUs y el efecto de NVLink.
+llama3.3-70b-iq4 | bartowski/Llama-3.3-70B-Instruct-GGUF:IQ4_XS     | unsloth/Llama-3.3-70B-Instruct              | 20480 | 32 | | 2 |
+qwen3-32b-q8     | unsloth/Qwen3-32B-GGUF:Q8_0                      | Qwen/Qwen3-32B                              | 32768 | 32 | | 2 |
+gemma3-27b-q8    | unsloth/gemma-3-27b-it-GGUF:Q8_0                 | unsloth/gemma-3-27b-it                      | 32768 | 32 | | 2 |
+#  MoE grande híbrido (necesita 64 GB de RAM además de las 2 GPUs)
+glm-4.5-air-q4   | unsloth/GLM-4.5-Air-GGUF:Q4_K_M                  | zai-org/GLM-4.5-Air                         | 32768 | 64 | | 2 | --n-cpu-moe 22
